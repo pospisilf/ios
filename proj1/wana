@@ -1,0 +1,240 @@
+#!/bin/sh
+#IOS - první projekt
+#Autor: Filip Pospíšil (xpospi0f)
+
+## inicializace ##
+POSIXLY_CORRECT=yes
+## /inicializace ##
+
+## PŘEPÍNAČE ##
+argumenty=( "$@" )
+soubory=()
+output=()
+
+#Filtry
+switcha=0
+switchb=0
+switchip=0
+switchuri=0
+#Příkazy
+switchlistip=0
+switchlisthosts=0
+switchlisturi=0
+switchhistip=0
+switchhistload=0
+## /PŘEPÍNAČE ##
+## POZICE ##
+apos=0
+bpos=0
+ippos=0
+uripos=0
+## /POZICE ##
+
+## NÁPOVĚDA ##
+help ()# V případě že nastane chyba, vypiš nápovědu.
+{
+    echo '
+                   ## NÁPOVĚDA ##:
+
+Správné použití: wana [FILTR] [PŘÍKAZ] [LOG [LOG2 [...]]]
+
+Hodnoty filtru
+    -a DATETIME - jsou uvažovány pouze hodnoty PO tomtu datu (vyjma). DATETIME je formátu YYYY-MM-DD HH:MM:SS
+    -b DATETIME - jsou uvažovány pouze hodnoty PŘED tímto datem (vyjma). DATETIME je formátu YYYY-MM-DD HH:MM:SS
+    -ip IPADR - jsou uvažovány záznamy požadavků ze zdrojové adresy IPADDR. IPADDR je formátu IPv4 nebo IPv6
+    -uri URI - jsou uvažovány záznamy týkající se dotazů na konkrétní stránku.
+
+Hodnoty příkazů:
+    list-ip - výpis seznamu zdrojů IP adres
+    list-hosts - výpis seznamu zdrojových doménových jmen
+    list-uri – výpis seznamu cílových zdrojů (URI)
+    hist-ip – výpis histogramu četností dotazů podle zdrojových IP adres
+    hist-load – výpis histogramu zátěže (tj. počtu dotazů ve jednotlivých časových intervalech)
+
+                    ## NÁPOVĚDA ##'
+}
+## /NÁPOVĚDA ##
+
+## CHYBY ##
+error() # Chybové hlášky
+{
+    case $1 in
+      prikaz)
+        echo '!!!Bylo zadáno příliš mnoho příkazů!!!'
+        exit 1;;
+      format)
+        echo '!!!Datum nebo čas bylo zadáno špatně, správný formát je YYYY-MM-DD HH:MM:SS!!!'
+        exit 1;;
+      formatip)
+        echo '!!!Formát IP adresy je špatný!!!'
+        exit 1;;
+    esac
+}
+## /CHYBY ##
+
+
+filtry() # Přepínače filtrů, vstupní argumenty filtr a jeho pozice v argumentech.
+{
+    case $1 in
+      -a) #Když je vsutpním argumentem a, nastaví swtich na 1 a zároveň do proměnné apos uloží pozici.
+        if [[ ${argumenty[$2]} =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]][0-9]{2}:[0-9]{2}:[0-9]{2}$ ]]; then #Kontrola správnotsi času
+          switcha=1 #Zapni switch
+          apos=$2 #Nastav pozici pro následující argument
+          return 1
+        else
+          error format
+          exit 0
+        fi;;
+      -b) #Když je vsutpním argumentem b, nastaví swtich na 1 a zároveň do proměnné apos uloží pozici.
+        if [[ ${argumenty[$2]} =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]][0-9]{2}:[0-9]{2}:[0-9]{2}$ ]]; then #Kontrola správnotsi času
+          switchb=1 #Zapni switch
+          bpos=$2 #Nastav pozici pro následující argument
+        else
+          error format
+          exit 0
+        fi;;
+      -ip)
+        if [[ ${argumenty[$2]} =~ ^([0-9]{1,2}|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]{1,2}|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]{1,2}|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.([0-9]{1,2}|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$ ]]; then
+          switchip=1 #Zapni switch
+          ippos=$2 #Nastav pozici pro následující argument
+        elif [[ ${argumenty[$2]} =~ ^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$ ]]; then
+          switchip=1 # Zapni switch
+          ippos=$2 #Nastav pozici pro následující argument
+        else
+          error formatip
+          exit 0
+        fi;;
+      -uri)
+        switchuri=1 #Zapni switch
+        uripos=$2;; #Nastav pozici pro následující argument
+    esac
+}
+
+prikazy()
+{
+  case $1 in
+    list-ip) switchlistip=1;;
+    list-hosts) switchlisthosts=1;;
+    list-uri) switchlisturi=1;;
+    hist-ip) switchhistip=1;;
+    hist-load) switchhistload=1;;
+  esac
+}
+
+## PROGRAM ##
+## Zjištění vstupních argumentů.
+
+if [ "$#" -eq 0 ]; then
+  echo zadne argumenty
+  exit 0;
+fi
+
+iter=0
+for var in "$@"
+do
+  iter=$(expr $iter + 1)
+  filtry $var "$((iter))" # Zavolej funkci filtry, jestliže je argument filtr, změň jeho hodnotu na 1.
+  prikazy $var "$((iter))" # Zavolej funkci prikazy, jestliže je argument příkaz, změň jeho hodnotu na 1.
+  if [ -s "$var" ]; then # Jestliže je příkaz název existujícího, neprázdného souboru, přidej do seznamu souborů.
+    soubory+=("$var")
+  fi
+  if [ $((switchlistip + switchlisthosts + switchlisturi + switchhistip + switchhistload)) -ge 2 ]; then #Zkontroluj, či se nezapíná již druhý parametr, jestli ano, ukonči.
+    error prikaz
+    help
+    exit 0;
+  fi
+done
+
+
+if [ $((switchlistip + switchlisthosts + switchlisturi + switchhistip + switchhistload + switcha + switchb + switchip + switchuri)) -eq 0 ]; then #Když není zadaný žádný fitlr ani příkaz, vypiš input na output
+  itr=0
+  while [ $itr -lt "${$#soubory[@]}" ]
+  do
+    zcat -f ${soubory[$itr]}
+    itr=$(expr $itr + 1)
+  done
+  exit 0;
+fi
+
+## filtry
+# prikazy_proved()
+# {
+#   case $1 in
+#     -a) # Přeber hodnotu data uloženou v $apos, převeď datum v načítaném logu na stejný formát, porovnej hodnoty, jestliže splňuje, použij řádek a pokračuj, jestliže nesplňuje, nepočítej s ním.
+#     -b) # Přeber hodnotu data uloženou v $bpos, převeď datum v načítaném logu na stejný formát, porovnej hodnoty, jestliže splňuje, použij řádek a pokračuj, jestliže nesplňuje, nepočítej s ním.
+#     -ip) # Přeber hodnotu uloženou v $ippos, zkotnroluj údaj v načítaném logu, porovnej , jestliže splňuje, použij řádek a pokračuj, jestliže nesplňuje, nepočítej s ním.
+#     -uri) # Přeber hodnotu uloženou v $uripos, zkotnroluj údaj v načítaném logu, porovnej , jestliže splňuje, použij řádek a pokračuj, jestliže nesplňuje, nepočítej s ním.
+#   esac
+# }
+
+
+
+
+## Příkazy
+if [[ $switchlistip -eq 1 ]]; then # Když je zapnutý přepínač list-ip
+  output=()
+  itr=0
+  while [[ $itr -lt "${#soubory[@]}" ]]; do
+    vysledek=($(zcat -f "${soubory[itr]}" | awk '{print $1;}'))
+    output+=$vysledek
+    itr=$(expr $itr + 1)
+  done
+  serazeny_output=($(echo "${vysledek[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+  printf '%s\n' "${serazeny_output[@]}"
+elif [[ $switchlisthosts -eq 1 ]]; then # Nebo když je zapnutý list-hosts
+  itr=0
+  while [[ $itr -lt "${#soubory[@]}" ]]; do
+    vysledek=($(zcat -f "${soubory[itr]}" | awk '{print $1;}'))
+    output+="$vysledek"
+    itr=$(expr $itr + 1)
+  done
+  serazeny_output=($(echo "${vysledek[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+  delka=${#serazeny_output[@]}
+  for ((i=0; i<$delka; i++ ))
+  do
+    navratova=($(host ${serazeny_output[i]} | awk '{print $NF;}'))
+    if [[ "$navratova" == "3(NXDOMAIN)" ]]||[[ "$navratova" == "2(SERVFAIL)" ]]; then
+      echo ${serazeny_output[i]}
+    else
+      echo $navratova
+    fi
+  done
+elif [[ $switchlisturi -eq 1 ]]; then # Nebo když je zapnutý switch uri
+  itr=0
+  while [[ $itr -lt "${#soubory[@]}" ]]; do
+    vysledek=($(zcat -f "${soubory[itr]}" | awk '{print $11;}'))
+    output+="$vysledek"
+    itr=$(expr $itr + 1)
+  done
+  serazeny_output=($(echo "${vysledek[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
+  printf '%s\n' "${serazeny_output[@]}" | cut -d "|" -f 2
+# elif [[ $switchhistip -eq 1 ]]; then # Nebo dkyž je zapnutý switch histogramu IP
+#
+# elif [[ &switchhistload -eq 1 ]]; then #Nebo když jse zapnutá switch pro histogram zátěže
+#
+fi
+
+
+
+
+## Na testování obsahu proměnných atd.
+# echo FITLER SWITCH TEST
+# echo \-a: $switcha
+# echo \-b: $switchb
+# echo \-ip: $switchip
+# echo \-uri: $switchuri
+# echo PRIKAZY SWITHC TEST
+# echo list-ip: $switchlistip
+# echo list-hosts: $switchlisthosts
+# echo list-uri: $switchlisturi
+# echo hist-ip: $switchhistip
+# echo hist-load: $switchhistload
+# echo FILTER SWITCH POSITIONS
+# echo apos: $apos
+# echo argumnet po a ${argumenty[$apos]}
+# echo bpos: $bpos
+# echo argumnet po b ${argumenty[$bpos]}
+# echo ippos: $ippos
+# echo argumnet po ip ${argumenty[$ippos]}
+# echo uripos: $uripos
+# echo argumnet po uri ${argumenty[$uripos]}
